@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Hand Tracking</title>
+  <link rel="icon" href="data:,">
+
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: white;
+      text-align: center;
+      font-family: Arial;
+    }
+
+    #box {
+      position: relative;
+      display: inline-block;
+    }
+
+    video {
+      width: 640px;
+      max-width: 95vw;
+      display: block;
+    }
+
+    canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 640px;
+      max-width: 95vw;
+    }
+
+    #status {
+      font-size: 20px;
+      margin: 10px;
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>✋ Hand Tracking</h1>
+<div id="status">Loading...</div>
+
+<div id="box">
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+</div>
+
+<script type="module">
+
+import {
+  HandLandmarker,
+  FilesetResolver,
+  DrawingUtils
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const status = document.getElementById("status");
+
+async function start() {
+
+  // CAMERA
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: true
+  });
+
+  video.srcObject = stream;
+
+  await video.play();
+
+  await new Promise(resolve => {
+    if (video.readyState >= 2) {
+      resolve();
+    } else {
+      video.onloadeddata = resolve;
+    }
+  });
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  status.innerText = "Loading MediaPipe...";
+
+  // MEDIAPIPE
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm"
+  );
+
+  const handLandmarker =
+    await HandLandmarker.createFromOptions(
+      vision,
+      {
+        baseOptions: {
+          modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+        },
+
+        runningMode: "VIDEO",
+        numHands: 2,
+
+        minHandDetectionConfidence: 0.3,
+        minHandPresenceConfidence: 0.3,
+        minTrackingConfidence: 0.3
+      }
+    );
+
+  const drawingUtils = new DrawingUtils(ctx);
+
+  status.innerText = "Show your hand ✋";
+
+  let lastVideoTime = -1;
+
+  function loop() {
+
+    if (video.currentTime !== lastVideoTime) {
+
+      lastVideoTime = video.currentTime;
+
+      const result =
+        handLandmarker.detectForVideo(
+          video,
+          performance.now()
+        );
+
+      ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+      if (result.landmarks.length > 0) {
+
+        status.innerText = "✅ HAND DETECTED";
+
+        for (const landmarks of result.landmarks) {
+
+          drawingUtils.drawConnectors(
+            landmarks,
+            HandLandmarker.HAND_CONNECTIONS,
+            {
+              color: "#00FF00",
+              lineWidth: 5
+            }
+          );
+
+          drawingUtils.drawLandmarks(
+            landmarks,
+            {
+              color: "#FF0000",
+              lineWidth: 3
+            }
+          );
+        }
+
+      } else {
+
+        status.innerText = "👋 No hand detected";
+
+      }
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  loop();
+}
+
+start().catch(error => {
+
+  console.error(error);
+
+  status.innerText =
+    "ERROR: " + error.message;
+
+});
+
+</script>
+
+</body>
+</html>
